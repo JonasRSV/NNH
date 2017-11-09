@@ -1,101 +1,100 @@
 module Main where
 
-data Connection a = Connection Int a
-data Neuron a = Input Int a | Hidden Int a a [Connection a] | Output a a [Connection a]
+data Neuron a = OpenNeuron a | ConnectedNeuron a a [a]
+data Network a = ConnectedNetwork [Neuron a] (Network a) | OpenNetwork [Neuron a]
 
--- Everything Needed from a Neuron in a NeuralNetwork
-class NeuralBehavior a where
-    squish ::  a -> a
-    dsquish :: (Num b) => a -> b
-
-retrieve :: [a] -> (a -> Bool) -> a
-retrieve list f = case dropWhile (not . f) list of
-        [] -> error "Non Existant Connection Requested"
-        (a:_) -> a
-
-connectionId :: Connection a -> Int
-connectionId (Connection identity _) = identity
-
-connectionWeigth :: Connection a -> a
-connectionWeigth (Connection _ weigth) = weigth
-
-activateNEU :: Neuron a -> a -> Neuron a
-activateNEU (Hidden a _ c d) b = Hidden a b c d
-activateNEU (Output _ b c) a = Output a b c
-activateNEU (Input a _) b = Input a b
-
-activation :: Neuron a -> a
-activation (Hidden _ a _ _) = a
-activation (Output a _ _) = a
-activation (Input _ a) = a
-
+-- Accessors
 bias :: Neuron a -> a
-bias (Hidden _ _ a _) = a
-bias (Output _ a _) = a
-bias Input{} = error "Input Neurons has no bias"
+bias OpenNeuron{} = error "input neuron has no bias"
+bias (ConnectedNeuron _ a _) = a
 
-neuronId :: Neuron a -> Int
-neuronId (Hidden identity _ _ _) = identity
-neuronId Output{} = error "Output neurons has no ID because the lack further connections"
-neuronId (Input identity _) = identity
+activity :: Neuron a -> a 
+activity (OpenNeuron a ) = a
+activity (ConnectedNeuron a _ _) = a
 
-connections :: Neuron a -> [Connection a]
-connections (Hidden _ _ _ b) = b
-connections (Output _ _ b) = b
-connections Input{} = error "Input Neurons has no weigths"
-
-connection :: Int -> Neuron a -> Connection a
-connection identity (Hidden _ _ _ b) = retrieve b ((==identity) . connectionId)
-connection identity (Output _ _ b) = retrieve b ((==identity) . connectionId)
-connection _ Input{} = error "Input Neurons has no weigths"
-
-activateNeuron :: (Num a) => Neuron a -> [Neuron a] -> Neuron a
-activateNeuron neuron = squish . activateNEU neuron . sum .
-    map (\neuron' ->
-        let identity = neuronId neuron'
-        in (activation neuron' * connectionWeigth (connection identity neuron)))
-
--------------------------------
--- Everything Needed for Querying and Learning
-
-data Network a = NetworkHidden [Neuron a] (Network a) | NetworkInput [Neuron a] (Network a) | NetworkOutput [Neuron a]
+scalars :: Neuron a -> [a]
+scalars OpenNeuron{} = error "Input neuron has no weigths"
+scalars (ConnectedNeuron _ _ a) = a
 
 networkNeurons :: Network a -> [Neuron a]
-networkNeurons (NetworkHidden neurons _) = neurons
-networkNeurons (NetworkInput neurons _) = neurons
-networkNeurons (NetworkOutput neurons) = neurons
+networkNeurons (OpenNetwork a) = a
+networkNeurons (ConnectedNetwork a _) = a
 
-activateNET :: Network a -> [Neuron a] -> Network a
-activateNET (NetworkHidden _ network) neurons = NetworkHidden neurons network
-activateNET (NetworkInput _ network) neurons = NetworkInput neurons network
-activateNET NetworkOutput{} neurons = NetworkOutput neurons
+-- GeneratorFunctions
+
+openNeuronGenerator :: a -> [Neuron a]
+openNeuronGenerator activation = cycle [(OpenNeuron activation)]
+
+connectedNeuronGenerator :: a -> a -> [([a] -> Neuron a)]
+connectedNeuronGenerator activation bias = cycle [(ConnectedNeuron activation bias)]
+
+updateNeuron :: Neuron a -> a -> Neuron a
+updateNeuron (OpenNeuron _) a = OpenNeuron a
+updateNeuron (ConnectedNeuron _ b c) a = ConnectedNeuron a b c
+
+updateNetwork :: Network a -> [Neuron a] -> Network a
+updateNetwork OpenNetwork{} a = OpenNetwork a
+updateNetwork (ConnectedNetwork _ b) a = ConnectedNetwork a b
+
+-- NetworkBuilding
+
+networkCardinality :: Network a -> Int
+networkCardinality = length . networkNeurons
+
+networkGenerator :: [[a] -> Neuron a] -> a -> Int -> [Int] -> Network a
+networkGenerator neuronGenerator defaultWeigth previousCardinality (layer:layers) = case layers of 
+    [] -> OpenNetwork neurons
+    _  -> let nextNetwork = networkGenerator neuronGenerator defaultWeigth layer layers
+          in (ConnectedNetwork neurons nextNetwork)
+    
+    where neurons = (take layer . map (\f -> f $ replicate previousCardinality defaultWeigth) $ neuronGenerator) 
+
+networkBuilder :: a -> a -> a -> [Int] -> Network a 
+networkBuilder defaultActivation defaultBias defaultWeigth (inputLayer:layers) = 
+    let openNeurons = take inputLayer $ openNeuronGenerator defaultActivation
+        connectedNeurons = connectedNeuronGenerator defaultActivation defaultBias 
+    in ConnectedNetwork openNeurons (networkGenerator connectedNeurons defaultWeigth inputLayer layers)
+
+makeDefaultNetwork :: [Int] -> Network Double
+makeDefaultNetwork = networkBuilder 0.5 10.0 0.5
+
+--Neuron functionalities
+
+activateConnection :: (a -> a -> a) -> Neuron a -> a -> a
+activateConnection f neuron = f (activity neuron) 
+
+activateNeuron :: (Num a) => (Neuron a -> a -> a) -> [Neuron a] -> Neuron a -> Neuron a
+activateNeuron f connections neuron = updateNeuron' . sum $ zipWith (f) connections (scalars neuron)
+    where 
+        updateNeuron' = updateNeuron neuron
+
+--Network functionalities
+
+foldNetwork :: (Network a -> Network a -> Network a) -> Network a -> Network a -> Network a
+foldNetwork f a network@(ConnectedNetwork _ network') = foldNetwork f (f a network) network' 
+
+propagateNetwork :: (Num a) => (a -> a -> a) -> Network a -> Network a -> Network a
+propagateNetwork f previousNetwork network = updateNetwork' . map (activateNeuron') $ networkNeurons network
+    where activateNeuron' = activateNeuron (activateConnection f) (networkNeurons previousNetwork)
+          updateNetwork' = updateNetwork network
+
+activateInputNetwork :: Network a -> [a] -> Network a
+activateInputNetwork (ConnectedNetwork _ network) input =
+    let inputNeurons = map OpenNeuron input 
+    in ConnectedNetwork inputNeurons network
+
+activateOpenNetwork :: (Num a) => (a -> a -> a) -> Network a -> [a] -> Network a
+activateOpenNetwork f network@(ConnectedNetwork _ networks) input = 
+    let activeNetwork = activateInputNetwork network input
+        propagation = propagateNetwork f
+    in foldNetwork propagation activeNetwork networks
 
 
-propagate :: (Num a) => Network a -> Network a
-propagate (NetworkInput neurons network) = propagate . activateNET network . map (`activateNeuron` neurons) $ networkNeurons network
-propagate (NetworkHidden neurons network) = propagate . activateNET network . map (`activateNeuron` neurons) $ networkNeurons network
-propagate network@(NetworkOutput _) = network
-
-
---------------------------------------------
--- Everything Needed for instantiating a network
-
-makeConnectedNeurons ::[Int] -> (Int -> a -> a -> b -> Neuron a) ->  a -> a -> Int -> ([Int], [Neuron a])
-makeConnectedNeurons identifications constructor init bias cardinality =
-    let ids = take cardinality identifications
-        neurons = map (\identity -> constructor identity init bias []) ids
-    in (drop cardinality identifications, neurons)
 
 
 
 
-instance NeuralBehavior (Neuron a) where
-    squish neuron = neuron
-    dsquish neuron = 5
 
-cost :: (Num a) => Network a -> [a] -> a
-cost (NetworkOutput neurons) = square . sum . zipWith (-) (map activation neurons)
-    where square a = a * a
 
 
 
