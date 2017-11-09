@@ -90,6 +90,18 @@ activateOpenNetwork f network@(ConnectedNetwork _ networks) input =
     in foldNetwork propagation activeNetwork networks
 
 
+queryNetwork :: (Num a) => Network a -> [a] -> [a]
+queryNetwork network input = map activity . networkNeurons $ output
+    where output = activateOpenNetwork (*) network input
+
+
+networkCostFunction :: (Num a) => a -> a -> a
+networkCostFunction a b = (a - b) * (a - b)
+
+networkCost :: (Num a) => [a] -> [a] -> a
+networkCost output = sum . zipWith networkCostFunction output
+
+
 
 
 
