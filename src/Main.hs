@@ -1,7 +1,12 @@
 module Main where
 
+import Control.Monad(replicateM, forever)
+
 data Neuron = OpenNeuron Double Double | ConnectedNeuron Double Double Double [Double] 
+  deriving(Show)
+
 data Network = ConnectedNetwork [Neuron] Network | OpenNetwork [Neuron]
+  deriving(Show)
 
 -- Accessors
 
@@ -36,7 +41,7 @@ updateBruttoActivation (OpenNeuron a _) b = OpenNeuron a b
 updateBruttoActivation (ConnectedNeuron a _ c d) b = ConnectedNeuron a b c d
 
 updateScalars :: Neuron -> [Double] -> Neuron
-updateScalars OpenNetwork{} = error "Open neuron has no weights, thus cant update"
+updateScalars OpenNeuron{} _ = error "Open neuron has no weights, thus cant update"
 updateScalars (ConnectedNeuron a b c _) d = ConnectedNeuron a b c d
 
 -- Generators
@@ -125,9 +130,9 @@ standardQuery = networkQuery (*) squish
 -- Learning
 
 
-neuronGradientDecent :: Neuron -> Double -> (Neuron, Double)
-neuronGradient neuron expected = (updateScalars neuron updatedWeigths, derror * dsq)
-    where derror = dcostFunction (netActivation neuron) expected
+neuronGradientDecent :: Double -> Neuron -> (Neuron, Double)
+neuronGradientDecent totalError neuron = (updateScalars neuron updatedWeigths, derror * dsq)
+    where derror = dcostFunction (netActivation neuron) totalError
           dsq = dsquish (netActivation neuron)
 
         --   This is where i apply the chain rule for each Weigth 
@@ -169,18 +174,25 @@ neuronGradientPropagation connections errors neuron index = (updateScalars neuro
           updatedWeigths = zipWith (-) (neuralScalars neuron) offset
 
 
-        -- 
+backPropagation :: Network -> Double -> (Network, [Double])
+backPropagation (OpenNetwork neurons) totalError = 
+  let (neurons', errors') = unzip $ map (neuronGradientDecent totalError) neurons
+    in (OpenNetwork neurons', errors')
 
+backPropagation (ConnectedNetwork neurons network) totalError = 
+  let (network', perrors) = backPropagation network totalError
+      neuronGradientPropagation' = neuronGradientPropagation (networkNeurons network') perrors
+      (neurons', errors') = unzip $ zipWith neuronGradientPropagation' neurons [0..] 
+    in (ConnectedNetwork neurons' network', errors')
+    
 
+learn :: Network -> Double -> Network
+learn (ConnectedNetwork neurons network) totalError = 
+  let (network', _) = backPropagation network totalError
+    in ConnectedNetwork neurons network'
 
-backPropagation :: Network -> [Double] -> (Network, [Double])
-backPropagation (OpenNetwork neurons) errors = 
-    where 
-
--- backPropagation (ConnectedNetwork neurons network) 
-
-
--- correctionalFunctions 
+outputCost :: [Double] -> [Double] -> Double
+outputCost output expected = sum $ zipWith costFunction output expected
 
 costFunction :: Double -> Double -> Double
 costFunction output expected = (output - expected) * (output - expected)
@@ -188,39 +200,92 @@ costFunction output expected = (output - expected) * (output - expected)
 dcostFunction :: Double -> Double -> Double
 dcostFunction output expected =  -(output - expected) - (output - expected)
 
--- Sigmoid Squishification
 squish :: Double -> Double
 squish val = exp val / (exp val + 1)
 
 dsquish :: Double -> Double
-dsquish val = (squish val) * (1 - squish val)
+dsquish val = squish val * (1 - squish val)
 
 learningRate :: Double
 learningRate = 5
 
 
--- Learning
-
-
-          
-
-
-
-
-
-
-
-
-
-
-
-
-
 main :: IO ()
-main = print "hi"
+main = do
+    putStrLn "Please Enter How Many Layers: "
+    times <- readLn
+    schematic <- replicateM times 
+                     (do putStrLn "Please Enter how many Neurons in this layer: "
+                         readLn :: IO Int) -- type annotation to remove ambiguity
+
+    putStrLn "How many output neurons is there? "
+    times' <- readLn
+
+    expected <- replicateM times' 
+                     (do putStrLn "Please Enter Correct Answer for this Neuron: "
+                         readLn :: IO Double) -- type annotation to remove ambiguity
+
+    
+
+    putStrLn "Please Enter How Many Input Neurons there Are: "
+    imp <- readLn
+
+    input <- replicateM imp
+                     (do putStrLn "Please Enter Input: "
+                         readLn :: IO Double) -- type annotation to remove ambiguity
+
+
+    
+    putStrLn "Creating Network"
+    let network = networkInitializer schematic
+    putStrLn "This is the Network"
+    print network
+
+
+    putStrLn "Querying Network"
+    let response = standardQuery network input
+    putStrLn "Network responded with"
+    print response
+
+    putStrLn "The cost is"
+    let cost = outputCost response expected 
+    print cost
+
+
+    putStrLn "Commencing Super Awesome Learning Shit"
+    let neonetwork = learn network cost
+    putStrLn "New Network"
+    print neonetwork
+
+    putStrLn "Querying Network Again"
+    let response' = standardQuery neonetwork input
+
+    putStrLn "New Response and Cost is"
+
+    print response'
+    let cost' = outputCost response' expected
+
+    print cost'
+
+    putStrLn "Improved by"
+    print $ cost / cost'
 
 
 
 
+    
 
+    
+
+
+
+    
+
+
+    
+
+
+    
+    print expected
+        
 
