@@ -275,17 +275,3 @@ main = do
 
     
 
-    
-
-
-
-    
-
-
-    
-
-
-    
-    print expected
-        
-
