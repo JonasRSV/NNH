@@ -14,10 +14,6 @@ netActivation :: Neuron -> Double
 netActivation (OpenNeuron a) = a
 netActivation (ConnectedNeuron a _ _) = a
 
-neuronBias :: Neuron -> Double
-neuronBias OpenNeuron{} = error "Open Neurons has no Bias"
-neuronBias (ConnectedNeuron _ a _) = a
-
 neuralScalars :: Neuron -> [Double]
 neuralScalars OpenNeuron{} = error "Open neurons has no connections"
 neuralScalars (ConnectedNeuron _ _ a) = a
@@ -152,8 +148,8 @@ neuronGradientPropagation hidden connections dErrordPNoutput neuron index = (upd
           --With respect to the input gives dError/dIput
           --Which in turn is used to adjust all the weights
 
-          -- This because dInput/dWeigth == weigth
-          -- THat's why weight * dError/dInput = dError/dWeigth
+          -- This because dInput/dWeigth == previous Activation
+          -- THat's why previous activation * dError/dInput = dError/dWeigth
           -- which gives the direction to minimize the cost
           offset = map (\hiddenActivation -> errorDoutput * outputDinput * hiddenActivation * learningRate) hidden
 
