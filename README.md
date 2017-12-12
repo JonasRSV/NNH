@@ -8,4 +8,10 @@ this network's learning is quite slow. This was mainly made to educate myself ab
 
 The schematic creates the network and each position in the list specifies the amount of Neurons at that given layer.
 
+## Getting Creative..
+
+The network is implemented such that changing squishification functions and Monoid for the Connections and neurons 
+is easily changleable.. per default it uses the sigmoid for squishification and multiplication as Monoid. But..
+who knows.. perhaps addition is more efficient for learning.. or something else?
+
 # 

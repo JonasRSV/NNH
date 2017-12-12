@@ -58,7 +58,7 @@ npi seed [previous, current] =
 networkInitializer :: StdGen -> [Int] -> Network
 networkInitializer seed schematic@(inputNodes:_) = ConnectedNetwork (take inputNodes openNeuronGenerator) (npi seed schematic)
 
--- Actual Functionalities
+-- This.. instead of implementing functor.. because of kind foo.. network is of kind * functor needs to be of kind * -> *
 
 networkFmap :: (Neuron -> Neuron) -> Network -> Network
 networkFmap f (ConnectedNetwork neurons network) = ConnectedNetwork (map f neurons) network
@@ -106,7 +106,7 @@ networkQuery f sq net inp = (queriedNetwork,  map netActivation . networkNeurons
 
 
 standardQuery :: Network -> [Double] -> (Network, [Double])
-standardQuery = networkQuery (*) squish
+standardQuery = networkQuery connective squish
 
 
 -- Learning
@@ -192,6 +192,9 @@ squish val = exp val / (exp val + 1)
 
 dsquish :: Double -> Double
 dsquish val = squish val * (1 - squish val)
+
+connective :: Double -> Double -> Double
+connective = (*)
 
 learningRate :: Double
 learningRate = 1
