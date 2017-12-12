@@ -11,7 +11,7 @@ The schematic creates the network and each position in the list specifies the am
 ## Getting Creative..
 
 The network is implemented such that changing squishification functions and Monoid for the Connections and neurons 
-is easily changleable.. per default it uses the sigmoid for squishification and multiplication as Monoid. But..
+is easily changeable.. per default it uses the sigmoid for squishification and multiplication as Monoid. But..
 who knows.. perhaps addition is more efficient for learning.. or something else?
 
 # 
