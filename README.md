@@ -6,4 +6,6 @@ to learn to recognize the number three represented in a 3x5 matrix.
 This is not supposed to be used for anything actually useful.. cause in it's current state
 this network's learning is quite slow. This was mainly made to educate myself about neural-networks.
 
+The schematic creates the network and each position in the list specifies the amount of Neurons at that given layer.
+
 # 
