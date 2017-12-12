@@ -1,8 +1,8 @@
 module Main where
 
-import Control.Monad(replicateM, forever)
+import System.Random
 
-data Neuron = OpenNeuron Double Double | ConnectedNeuron Double Double Double [Double] 
+data Neuron = OpenNeuron Double | ConnectedNeuron Double Double [Double]
   deriving(Show)
 
 data Network = ConnectedNetwork [Neuron] Network | OpenNetwork [Neuron]
@@ -11,20 +11,16 @@ data Network = ConnectedNetwork [Neuron] Network | OpenNetwork [Neuron]
 -- Accessors
 
 netActivation :: Neuron -> Double
-netActivation (OpenNeuron a _) = a
-netActivation (ConnectedNeuron a _ _ _) = a
-
-bruttoActivation :: Neuron -> Double
-bruttoActivation (OpenNeuron _ a) = a
-bruttoActivation (ConnectedNeuron _ a _ _) = a
+netActivation (OpenNeuron a) = a
+netActivation (ConnectedNeuron a _ _) = a
 
 neuronBias :: Neuron -> Double
 neuronBias OpenNeuron{} = error "Open Neurons has no Bias"
-neuronBias (ConnectedNeuron _ _ a _) = a
+neuronBias (ConnectedNeuron _ a _) = a
 
 neuralScalars :: Neuron -> [Double]
 neuralScalars OpenNeuron{} = error "Open neurons has no connections"
-neuralScalars (ConnectedNeuron _ _ _ a) = a
+neuralScalars (ConnectedNeuron _ _ a) = a
 
 networkNeurons :: Network -> [Neuron]
 networkNeurons (ConnectedNetwork a _) = a
@@ -33,51 +29,40 @@ networkNeurons (OpenNetwork a) = a
 -- Updaters
 
 updateNetActivation :: Neuron -> Double -> Neuron
-updateNetActivation (OpenNeuron _ b) a = OpenNeuron a b
-updateNetActivation (ConnectedNeuron _ b c d) a = ConnectedNeuron a b c d
-
-updateBruttoActivation :: Neuron -> Double -> Neuron
-updateBruttoActivation (OpenNeuron a _) b = OpenNeuron a b
-updateBruttoActivation (ConnectedNeuron a _ c d) b = ConnectedNeuron a b c d
+updateNetActivation (OpenNeuron _) a = OpenNeuron a
+updateNetActivation (ConnectedNeuron _ c d) a = ConnectedNeuron a c d
 
 updateScalars :: Neuron -> [Double] -> Neuron
 updateScalars OpenNeuron{} _ = error "Open neuron has no weights, thus cant update"
-updateScalars (ConnectedNeuron a b c _) d = ConnectedNeuron a b c d
+updateScalars (ConnectedNeuron a c _) d = ConnectedNeuron a c d
 
 -- Generators
 
 openNeuronGenerator :: [Neuron]
-openNeuronGenerator = cycle [OpenNeuron 0.5 0.5]
+openNeuronGenerator = cycle [OpenNeuron 0.0]
 
 connectedNeuronGenerator :: [[Double] -> Neuron]
-connectedNeuronGenerator = cycle [ConnectedNeuron 0.5 0.5 10]
-
-seamlessInitialConnectionValues :: [Double]
-seamlessInitialConnectionValues = cycle [0.5]
+connectedNeuronGenerator = cycle [ConnectedNeuron 0.0 0]
 
 -- Network Creating
 
-networkPropagationInitializer :: [Int] -> Network
-networkPropagationInitializer (previous:current:next:rest) = 
-    let nextNetwork = networkPropagationInitializer (current:next:rest) 
-        connections = take previous seamlessInitialConnectionValues
+npi :: StdGen -> [Int] -> Network
+npi seed (previous:current:next:rest) =
+    let nextNetwork = npi seed (current:next:rest)
+        connections = take previous $ randoms seed
         currentNeurons = map (\initializer -> initializer connections) (take current connectedNeuronGenerator)
-    in (ConnectedNetwork currentNeurons nextNetwork)
+    in ConnectedNetwork currentNeurons nextNetwork
 
-networkPropagationInitializer (previous:current:[]) = 
-    let connections = take previous seamlessInitialConnectionValues
+npi seed [previous, current] =
+    let connections = take previous $ randoms seed 
         currentNeurons = map (\initializer -> initializer connections) (take current connectedNeuronGenerator)
-    in (OpenNetwork currentNeurons)
+    in OpenNetwork currentNeurons
 
 
-networkInitializer :: [Int] -> Network
-networkInitializer schematic@(inputNodes:_) = ConnectedNetwork (take inputNodes openNeuronGenerator) (networkPropagationInitializer schematic) 
+networkInitializer :: StdGen -> [Int] -> Network
+networkInitializer seed schematic@(inputNodes:_) = ConnectedNetwork (take inputNodes openNeuronGenerator) (npi seed schematic)
 
 -- Actual Functionalities
-
-networkFold :: (Network -> Network -> Network) -> Network -> Network -> Network
-networkFold f a net@(ConnectedNetwork _ network) = networkFold f (f a net) network
-networkFold f a net@(OpenNetwork _) = f a net
 
 networkFmap :: (Neuron -> Neuron) -> Network -> Network
 networkFmap f (ConnectedNetwork neurons network) = ConnectedNetwork (map f neurons) network
@@ -86,28 +71,28 @@ networkFmap f (OpenNetwork neurons) = OpenNetwork (map f neurons)
 
 -- Neuron Activation
 
-activateBrutto :: (Double -> Double -> Double) -> [Neuron] -> Neuron -> Neuron
-activateBrutto f neurons neuron = updateNeuron . sum $ zipWith f (neuralScalars neuron) connectionActivities
-    where updateNeuron = updateBruttoActivation neuron
-          connectionActivities = map netActivation neurons
+activateBrutto :: (Double -> Double -> Double) -> [Neuron] -> Neuron -> Double
+activateBrutto f neurons neuron = sum $ zipWith f (neuralScalars neuron) connectionActivities
+    where connectionActivities = map netActivation neurons
 
 activateNeuron :: (Double -> Double -> Double) -> (Double -> Double) -> [Neuron] -> Neuron -> Neuron
-activateNeuron f sq neurons neuron = updateNeuron $ sq $ bruttoActivation bruttoUpdate
+activateNeuron f sq aneurons neuron = updateNeuron $ sq $ activateBrutto f aneurons neuron
     where updateNeuron = updateNetActivation neuron
-          bruttoUpdate = activateBrutto f neurons neuron
 
 
 -- Network Activation
 
 forwardPropagation :: (Double -> Double -> Double) -> (Double -> Double) -> Network -> Network -> Network
-forwardPropagation f sq acc next = networkFmap activateNeuron' next
-    where activateNeuron' = activateNeuron f sq (networkNeurons acc)
+forwardPropagation f sq activated = networkFmap activateNeuron' 
+    where activateNeuron' = activateNeuron f sq (networkNeurons activated)
 
-networkPropagation :: (Double -> Double -> Double) -> (Double -> Double) -> Network -> Network
-networkPropagation f sq input@(ConnectedNetwork _ network) = networkFold propagation input network
-    where propagation = forwardPropagation f sq
+networkPropagation :: (Double -> Double -> Double) -> (Double -> Double) -> Network -> (Network, Network)
+networkPropagation _ _ output@OpenNetwork{} = (output, output)
+networkPropagation f sq input@(ConnectedNetwork inNeurons network) =
+  let propagation = forwardPropagation f sq
+      (queriedNetwork, outputLayer) = networkPropagation f sq $ propagation input network
+    in (ConnectedNetwork inNeurons queriedNetwork, outputLayer)
 
-networkPropagation _ _ net@(OpenNetwork{}) = net
 
 -- Querying Network
 
@@ -118,41 +103,42 @@ initializeNetworkQuery (ConnectedNetwork neurons network) input = ConnectedNetwo
 initializeNetworkQuery (OpenNetwork neurons) input = OpenNetwork activatedNeurons
     where activatedNeurons = zipWith updateNetActivation neurons input
 
-networkQuery :: (Double -> Double -> Double) -> (Double -> Double) -> Network -> [Double] -> [Double]
-networkQuery f sq net inp = map netActivation . networkNeurons $ networkPropagation f sq initializedNetwork
+networkQuery :: (Double -> Double -> Double) -> (Double -> Double) -> Network -> [Double] -> (Network, [Double])
+networkQuery f sq net inp = (queriedNetwork,  map netActivation . networkNeurons $ responseLayer)
     where initializedNetwork = initializeNetworkQuery net inp
+          (queriedNetwork, responseLayer) = networkPropagation f sq initializedNetwork
 
 
-standardQuery :: Network -> [Double] -> [Double]
+standardQuery :: Network -> [Double] -> (Network, [Double])
 standardQuery = networkQuery (*) squish
 
 
 -- Learning
 
 
-neuronGradientDecent :: Double -> Neuron -> (Neuron, Double)
-neuronGradientDecent totalError neuron = (updateScalars neuron updatedWeigths, derror * dsq)
-    where derror = dcostFunction (netActivation neuron) totalError
+neuronGradientDecent :: [Double] -> Double -> Neuron -> (Neuron, Double)
+neuronGradientDecent hidden expected neuron = (updateScalars neuron updatedWeigths, derror * dsq)
+    where derror = dcostFunction (netActivation neuron) expected
           dsq = dsquish (netActivation neuron)
 
-        --   This is where i apply the chain rule for each Weigth 
-        --  derror is dTotalCost/dOutput, 
-        --  dsq is dOutput/dInput 
-        --  and weigth is dInput/dWeigth 
+        --   This is where i apply the chain rule for each Weigth
+        --  derror is dTotalCost/dOutput,
+        --  dsq is dOutput/dInput
+        --  and previous output is dInput/dWeigth
         --  The result equals dTotalCost/dWeigth times a learningRate
-          offset = map (\weigth -> derror * dsq * weigth * learningRate) (neuralScalars neuron)
+          offset = map (\hiddenActivation -> derror * dsq * hiddenActivation * learningRate) hidden
 
-          updatedWeigths = zipWith (-) (neuralScalars neuron) offset
-
-
+          updatedWeigths = zipWith (-) (neuralScalars neuron) offset 
 
 
-neuronGradientPropagation :: [Neuron] -> [Double] -> Neuron -> Int -> (Neuron, Double)
-neuronGradientPropagation connections errors neuron index = (updateScalars neuron updatedWeigths, errorDoutput * outputDinput)
-    where connections' = map (!!index) . map (neuralScalars) $ connections
+
+
+neuronGradientPropagation :: [Double] -> [Neuron] -> [Double] -> Neuron -> Int -> (Neuron, Double)
+neuronGradientPropagation hidden connections dErrordPNoutput neuron index = (updateScalars neuron updatedWeigths, errorDoutput * outputDinput)
+    where connections' = map ((!!index) . neuralScalars) connections
         -- Rate of change of total Error with respect to this neurons output
-          errorDoutput = sum $ zipWith (*) connections' errors
-        
+          errorDoutput = sum $ zipWith (*) connections' dErrordPNoutput
+
         -- Rate of change of This neurons output with respect to its input
           outputDinput = dsquish (netActivation neuron)
 
@@ -169,36 +155,41 @@ neuronGradientPropagation connections errors neuron index = (updateScalars neuro
           -- This because dInput/dWeigth == weigth
           -- THat's why weight * dError/dInput = dError/dWeigth
           -- which gives the direction to minimize the cost
-          offset = map (\weigth -> errorDoutput * outputDinput * weigth * learningRate) (neuralScalars neuron)
+          offset = map (\hiddenActivation -> errorDoutput * outputDinput * hiddenActivation * learningRate) hidden
 
-          updatedWeigths = zipWith (-) (neuralScalars neuron) offset
+          updatedWeigths = zipWith (-) (neuralScalars neuron) offset 
 
 
-backPropagation :: Network -> Double -> (Network, [Double])
-backPropagation (OpenNetwork neurons) totalError = 
-  let (neurons', errors') = unzip $ map (neuronGradientDecent totalError) neurons
-    in (OpenNetwork neurons', errors')
+backPropagation :: Network -> [Double] -> (Network, [Double])
+backPropagation (ConnectedNetwork cneurons (OpenNetwork oneurons)) expected =
+  let cactivation = map netActivation cneurons
+      (neurons', dErrordOutput) = unzip $ zipWith (neuronGradientDecent cactivation) expected oneurons
+    in (ConnectedNetwork cneurons (OpenNetwork neurons'), dErrordOutput)
 
-backPropagation (ConnectedNetwork neurons network) totalError = 
-  let (network', perrors) = backPropagation network totalError
-      neuronGradientPropagation' = neuronGradientPropagation (networkNeurons network') perrors
-      (neurons', errors') = unzip $ zipWith neuronGradientPropagation' neurons [0..] 
-    in (ConnectedNetwork neurons' network', errors')
-    
+backPropagation (ConnectedNetwork cneurons network@(ConnectedNetwork cneurons' _)) expected =
+  let (network', dErrorsdOutput) = backPropagation network expected
+      cactivation = map netActivation cneurons
+      neuronGradientPropagation' = neuronGradientPropagation cactivation (networkNeurons network') dErrorsdOutput
+      (neurons', dErrorsdOutput') = unzip $ zipWith neuronGradientPropagation' cneurons' [0..]
+    in (ConnectedNetwork neurons' network', dErrorsdOutput')
 
-learn :: Network -> Double -> Network
-learn (ConnectedNetwork neurons network) totalError = 
-  let (network', _) = backPropagation network totalError
-    in ConnectedNetwork neurons network'
+
+learn :: Network -> [Double] -> Network
+learn (ConnectedNetwork cneurons network@(ConnectedNetwork cneurons' _)) expected =
+  let (network', dErrorsdOutput) = backPropagation network expected
+      cactivation = map netActivation cneurons
+      neuronGradientPropagation' = neuronGradientPropagation cactivation (networkNeurons network') dErrorsdOutput
+      (neurons', dErrorsdOutput') = unzip $ zipWith neuronGradientPropagation' cneurons' [0..]
+    in ConnectedNetwork cneurons (ConnectedNetwork neurons' network')
 
 outputCost :: [Double] -> [Double] -> Double
-outputCost output expected = sum $ zipWith costFunction output expected
+outputCost output expected = sum $ zipWith costFunction output expected
 
 costFunction :: Double -> Double -> Double
-costFunction output expected = (output - expected) * (output - expected)
+costFunction output expected = (expected - output) * (expected - output)
 
 dcostFunction :: Double -> Double -> Double
-dcostFunction output expected =  -(output - expected) - (output - expected)
+dcostFunction output expected =  output - expected
 
 squish :: Double -> Double
 squish val = exp val / (exp val + 1)
@@ -207,71 +198,35 @@ dsquish :: Double -> Double
 dsquish val = squish val * (1 - squish val)
 
 learningRate :: Double
-learningRate = 5
+learningRate = 1
+
+multiplePropagations :: Network -> [Double] -> [Double] -> Int -> IO()
+multiplePropagations _ _ _ 0 = print "donezo"
+multiplePropagations net inp exp iter = do 
+                                      let (net', resp) = standardQuery net inp
+
+                                      {-print resp -}
+                                      print $ outputCost resp exp
+
+                                      let net'' = learn net' exp
+
+                                      multiplePropagations net'' inp exp (iter - 1)
+
+
 
 
 main :: IO ()
 main = do
-    putStrLn "Please Enter How Many Layers: "
-    times <- readLn
-    schematic <- replicateM times 
-                     (do putStrLn "Please Enter how many Neurons in this layer: "
-                         readLn :: IO Int) -- type annotation to remove ambiguity
 
-    putStrLn "How many output neurons is there? "
-    times' <- readLn
+    let scheme = [3, 5, 5, 3]
+    let input = [0.5, 0.7, 0.1]
+    let expected = [1.0, 0.0, 0.4]
 
-    expected <- replicateM times' 
-                     (do putStrLn "Please Enter Correct Answer for this Neuron: "
-                         readLn :: IO Double) -- type annotation to remove ambiguity
-
-    
-
-    putStrLn "Please Enter How Many Input Neurons there Are: "
-    imp <- readLn
-
-    input <- replicateM imp
-                     (do putStrLn "Please Enter Input: "
-                         readLn :: IO Double) -- type annotation to remove ambiguity
+    seed <- getStdGen 
 
 
-    
     putStrLn "Creating Network"
-    let network = networkInitializer schematic
-    putStrLn "This is the Network"
-    print network
+    let network = networkInitializer seed scheme
 
-
-    putStrLn "Querying Network"
-    let response = standardQuery network input
-    putStrLn "Network responded with"
-    print response
-
-    putStrLn "The cost is"
-    let cost = outputCost response expected 
-    print cost
-
-
-    putStrLn "Commencing Super Awesome Learning Shit"
-    let neonetwork = learn network cost
-    putStrLn "New Network"
-    print neonetwork
-
-    putStrLn "Querying Network Again"
-    let response' = standardQuery neonetwork input
-
-    putStrLn "New Response and Cost is"
-
-    print response'
-    let cost' = outputCost response' expected
-
-    print cost'
-
-    putStrLn "Improved by"
-    print $ cost / cost'
-
-
-
-
-    
+    multiplePropagations network input expected 20
 
