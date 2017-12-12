@@ -197,7 +197,14 @@ learningRate :: Double
 learningRate = 1
 
 multiplePropagations :: Network -> [Double] -> [Double] -> Int -> IO()
-multiplePropagations _ _ _ 0 = print "donezo"
+multiplePropagations net inp exp 0 = do 
+                                      let (net', resp) = standardQuery net inp
+                                      print $ outputCost resp exp
+                                      let clarifiedResponse = map (\idx -> if idx > 0.01 then idx else 0) resp 
+                                      putStrLn "Full Response is"
+                                      print clarifiedResponse 
+
+
 multiplePropagations net inp exp iter = do 
                                       let (net', resp) = standardQuery net inp
 
@@ -214,9 +221,16 @@ multiplePropagations net inp exp iter = do
 main :: IO ()
 main = do
 
-    let scheme = [3, 5, 5, 3]
-    let input = [0.5, 0.7, 0.1]
-    let expected = [1.0, 0.0, 0.4]
+    let scheme = [15, 10, 10, 10, 10]
+    let input = [1.0, 1.0, 1.0,
+                 0.0, 0.0, 1.0,
+                 0.0, 1.0, 1.0,
+                 0.0, 0.0, 1.0,
+                 1.0, 1.0, 1.0]
+
+
+                          {-Expects Number 3 to be the answer-}
+    let expected = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
     seed <- getStdGen 
 
@@ -224,5 +238,5 @@ main = do
     putStrLn "Creating Network"
     let network = networkInitializer seed scheme
 
-    multiplePropagations network input expected 20
+    multiplePropagations network input expected 100 
 
