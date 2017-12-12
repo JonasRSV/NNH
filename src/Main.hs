@@ -38,7 +38,7 @@ openNeuronGenerator :: [Neuron]
 openNeuronGenerator = cycle [OpenNeuron 0.0]
 
 connectedNeuronGenerator :: [[Double] -> Neuron]
-connectedNeuronGenerator = cycle [ConnectedNeuron 0.0 0]
+connectedNeuronGenerator = cycle [ConnectedNeuron 0.0 bias]
 
 -- Network Creating
 
@@ -195,6 +195,9 @@ dsquish val = squish val * (1 - squish val)
 
 learningRate :: Double
 learningRate = 1
+
+bias :: Double
+bias = 0
 
 multiplePropagations :: Network -> [Double] -> [Double] -> Int -> IO()
 multiplePropagations net inp exp 0 = do 
