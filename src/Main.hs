@@ -129,8 +129,8 @@ neuronGradientDecent hidden expected neuron = (updateScalars neuron updatedWeigt
 
 
 
-neuronGradientPropagation :: [Double] -> [Neuron] -> [Double] -> Neuron -> Int -> (Neuron, Double)
-neuronGradientPropagation hidden connections dErrordPNoutput neuron index = (updateScalars neuron updatedWeigths, errorDoutput * outputDinput)
+propagateNeuron :: [Double] -> [Neuron] -> [Double] -> Neuron -> Int -> (Neuron, Double)
+propagateNeuron hidden connections dErrordPNoutput neuron index = (updateScalars neuron updatedWeigths, errorDoutput * outputDinput)
     where connections' = map ((!!index) . neuralScalars) connections
         -- Rate of change of total Error with respect to this neurons output
           errorDoutput = sum $ zipWith (*) connections' dErrordPNoutput
@@ -165,8 +165,8 @@ backPropagation (ConnectedNetwork cneurons (OpenNetwork oneurons)) expected =
 backPropagation (ConnectedNetwork cneurons network@(ConnectedNetwork cneurons' _)) expected =
   let (network', dErrorsdOutput) = backPropagation network expected
       cactivation = map netActivation cneurons
-      neuronGradientPropagation' = neuronGradientPropagation cactivation (networkNeurons network') dErrorsdOutput
-      (neurons', dErrorsdOutput') = unzip $ zipWith neuronGradientPropagation' cneurons' [0..]
+      propagateNeuron' = propagateNeuron cactivation (networkNeurons network') dErrorsdOutput
+      (neurons', dErrorsdOutput') = unzip $ zipWith propagateNeuron' cneurons' [0..]
     in (ConnectedNetwork neurons' network', dErrorsdOutput')
 
 
@@ -174,7 +174,7 @@ learn :: Network -> [Double] -> Network
 learn (ConnectedNetwork cneurons network@(ConnectedNetwork cneurons' _)) expected =
   let (network', dErrorsdOutput) = backPropagation network expected
       cactivation = map netActivation cneurons
-      neuronGradientPropagation' = neuronGradientPropagation cactivation (networkNeurons network') dErrorsdOutput
+      neuronGradientPropagation' = propagateNeuron cactivation (networkNeurons network') dErrorsdOutput
       (neurons', dErrorsdOutput') = unzip $ zipWith neuronGradientPropagation' cneurons' [0..]
     in ConnectedNetwork cneurons (ConnectedNetwork neurons' network')
 
@@ -191,22 +191,22 @@ squish :: Double -> Double
 squish val = exp val / (exp val + 1)
 
 dsquish :: Double -> Double
-dsquish val = squish val * (1 - squish val)
+dsquish sq = sq * (1 - sq)
 
 connective :: Double -> Double -> Double
 connective = (*)
 
 learningRate :: Double
-learningRate = 1
+learningRate = 3
 
 bias :: Double
-bias = 0
+bias = 10
 
 multiplePropagations :: Network -> [Double] -> [Double] -> Int -> IO()
 multiplePropagations net inp exp 0 = do 
                                       let (net', resp) = standardQuery net inp
                                       print $ outputCost resp exp
-                                      let clarifiedResponse = map (\idx -> if idx > 0.01 then idx else 0) resp 
+                                      let clarifiedResponse = map (\idx -> if idx > 0.05 then idx else 0) resp 
                                       putStrLn "Full Response is"
                                       print clarifiedResponse 
 
